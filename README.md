@@ -1,4 +1,4 @@
-#Redis Rate Limit PoC
+# Redis Rate Limit PoC
 
 Just playing around with the redis go cli, and seeing what functionality is available for distributed rate limiting.
 
