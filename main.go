@@ -31,13 +31,18 @@ func main() {
 func requestTokensRoutine(client *redis.Client, name string, tokensWanted int) {
 	go func() {
 		for {
-			allowed, left, err := ratelimit.RateLimitWithLuaScript(context.Background(), client, bucketKey, capacity, refillRatePer30Seconds, tokensWanted)
+			ctx := context.Background()
+			allowed, locked, left, err := ratelimit.RateLimitWithLuaScript(ctx, client, bucketKey, capacity, refillRatePer30Seconds, tokensWanted, true)
 			if err != nil {
 				fmt.Printf("Routine: %+v, encountered error: %+v\n", name, err)
 				return
 			}
 			if allowed {
 				fmt.Printf("Routine: %s, remaining tokens: %d, got token!\n", name, left)
+				ratelimit.MakeMockAPICallAndUnlockBucket(ctx, client, bucketKey+":lock")
+			} else if locked {
+				fmt.Printf("Routine: %s, token bucket locked!\n", name)
+				time.Sleep(5 * time.Second)
 			} else {
 				fmt.Printf("Routine: %s, failed to get token!\n", name)
 				time.Sleep(5 * time.Second)
