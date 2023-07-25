@@ -2,23 +2,39 @@ package ratelimit
 
 import (
 	"context"
+	"errors"
 
 	"github.com/redis/go-redis/v9"
 )
 
-func RateLimitWithLuaScript(ctx context.Context, client *redis.Client, bucketKey string, capacity, refillRate, requestTokens int) (bool, error) {
+func RateLimitWithLuaScript(ctx context.Context, client *redis.Client, bucketKey string, capacity, refillRate, requestTokens int) (bool, int, error) {
 	luaScript := redis.NewScript(rateLimitLuaScript)
 	sha1, err := luaScript.Load(ctx, client).Result()
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 
 	result, err := client.EvalSha(ctx, sha1, []string{bucketKey}, capacity, refillRate, requestTokens).Result()
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 
-	return result.(int64) == 1, nil
+	response, ok := result.([]interface{})
+	if !ok || len(response) != 2 {
+		return false, 0, errors.New("unexpected response from Lua script")
+	}
+
+	allowed, ok := response[0].(int64)
+	if !ok {
+		return false, 0, errors.New("unexpected response for allowed")
+	}
+
+	tokensLeft, ok := response[1].(int64)
+	if !ok {
+		return false, 0, errors.New("unexpected response for tokens left")
+	}
+
+	return allowed == 1, int(tokensLeft), nil
 }
 
 const rateLimitLuaScript = `local bucket_key = KEYS[1]
@@ -46,5 +62,4 @@ if allowed then
     redis.call('DECRBY', bucket_key, request_tokens)
 end
 
-return allowed
-`
+return {allowed and 1 or 0, tonumber(redis.call('GET', bucket_key))}`

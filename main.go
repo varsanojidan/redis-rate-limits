@@ -11,8 +11,8 @@ import (
 
 const (
 	bucketKey              = "token_bucket"
-	capacity               = 10
-	refillRatePer30Seconds = 10
+	capacity               = 20
+	refillRatePer30Seconds = 20
 )
 
 func main() {
@@ -20,40 +20,28 @@ func main() {
 		Addr: "localhost:6379",
 	})
 
-	go func() {
-		for {
-			allowed, err := requestTokens(client, 2)
-			if err != nil {
-				fmt.Println("GoRoutine A Error:", err)
-				time.Sleep(5 * time.Second)
-			}
-			if allowed {
-				fmt.Println("GoRoutine A Request processed successfully.")
-			} else {
-				fmt.Println("GoRoutine A Rate limit exceeded. Please try again later.")
-			}
-		}
-	}()
-	go func() {
-		for {
-			allowed, err := requestTokens(client, 1)
-			if err != nil {
-				fmt.Println("GoRoutine B Error:", err)
-				time.Sleep(5 * time.Second)
-			}
-			if allowed {
-				fmt.Println("GoRoutine B Request processed successfully.")
-			} else {
-				fmt.Println("GoRoutine B Rate limit exceeded. Please try again later.")
-			}
-		}
-	}()
+	requestTokensRoutine(client, "A", 2)
+	requestTokensRoutine(client, "B", 3)
 
 	for {
 
 	}
 }
 
-func requestTokens(client *redis.Client, tokensWanted int) (bool, error) {
-	return ratelimit.RateLimitWithLuaScript(context.Background(), client, bucketKey, capacity, refillRatePer30Seconds, tokensWanted)
+func requestTokensRoutine(client *redis.Client, name string, tokensWanted int) {
+	go func() {
+		for {
+			allowed, left, err := ratelimit.RateLimitWithLuaScript(context.Background(), client, bucketKey, capacity, refillRatePer30Seconds, tokensWanted)
+			if err != nil {
+				fmt.Printf("Routine: %+v, encountered error: %+v\n", name, err)
+				return
+			}
+			if allowed {
+				fmt.Printf("Routine: %s, remaining tokens: %d, got token!\n", name, left)
+			} else {
+				fmt.Printf("Routine: %s, failed to get token!\n", name)
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}()
 }
