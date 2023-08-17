@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	bucketKey              = "token_bucket"
-	capacity               = 20
-	refillRatePer30Seconds = 20
+	bucketKey         = "token_bucket"
+	capacity          = 10   //number of tokens in the bucket
+	replenishmentRate = 0.33 //tokens per second
 )
 
 func main() {
@@ -20,31 +20,27 @@ func main() {
 		Addr: "localhost:6379",
 	})
 
-	requestTokensRoutine(client, "A", 2)
-	requestTokensRoutine(client, "B", 3)
+	requestTokensRoutine(client, "A", 10)
+	requestTokensRoutine(client, "B", 100)
 
 	for {
 
 	}
 }
 
-func requestTokensRoutine(client *redis.Client, name string, tokensWanted int) {
+func requestTokensRoutine(client *redis.Client, name string, maxTimeToWait int) {
 	go func() {
 		for {
 			ctx := context.Background()
-			allowed, locked, left, err := ratelimit.RateLimitWithLuaScript(ctx, client, bucketKey, capacity, refillRatePer30Seconds, tokensWanted, true)
+			allowed, timeToWait, tokensLeft, err := ratelimit.RateLimitWithLuaScript(ctx, client, bucketKey, capacity, maxTimeToWait, replenishmentRate)
 			if err != nil {
-				fmt.Printf("Routine: %+v, encountered error: %+v\n", name, err)
 				return
 			}
 			if allowed {
-				fmt.Printf("Routine: %s, remaining tokens: %d, got token!\n", name, left)
-				ratelimit.MakeMockAPICallAndUnlockBucket(ctx, client, bucketKey+":lock")
-			} else if locked {
-				fmt.Printf("Routine: %s, token bucket locked!\n", name)
-				time.Sleep(5 * time.Second)
+				fmt.Printf("Routine: %s, time to wait: %d, tokens left: %d. got token!\n", name, timeToWait, tokensLeft)
+				ratelimit.MakeMockAPICall()
 			} else {
-				fmt.Printf("Routine: %s, failed to get token!\n", name)
+				fmt.Printf("Routine: %s, did not got token! Sleeping: time to wait: %d, tokens left: %d, max time to wait: %d\n", name, timeToWait, tokensLeft, maxTimeToWait)
 				time.Sleep(5 * time.Second)
 			}
 		}
