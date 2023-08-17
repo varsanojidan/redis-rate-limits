@@ -81,6 +81,9 @@ local current_tokens = tonumber(redis.call('GET', bucket_key))
 if num_tokens_to_replenish > 0 then
     local available_capacity = capacity - current_tokens
     if available_capacity > 0 then
+		-- The number of tokens we add is either the number of tokens we have replenished over
+		-- the last time_difference, or enough tokens to refill the bucket completely, whichever
+		-- is lower.
         local tokens_to_add = math.min(available_capacity, num_tokens_to_replenish)
         redis.call('INCRBY', bucket_key, tokens_to_add)
         redis.call('SET', last_replenishment_timestamp_key, current_time)
